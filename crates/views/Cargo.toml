@@ -1,0 +1,8 @@
+[package]
+name = "stardust-views"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "页面与视图（screens + chrome，对齐 sonora 的 `views` crate）"
+
+[dependencies]

@@ -1,0 +1,8 @@
+[package]
+name = "stardust-state"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "应用全局状态（会话、播放、订阅、偏好等）"
+
+[dependencies]

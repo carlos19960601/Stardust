@@ -1,3 +1,27 @@
 [workspace]
 resolver = "3"
-members = ["crates/stardust"]
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1.0"
+gpui = "0.2.2"
+log = "0.4"
+env_logger = "0.11"
+libc = "0.2"
+signal-hook = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2", features = ["json"] }
+thiserror = "2"
+
+# 内部 crate（对齐 sonora 的多 crate 分层）
+stardust-api = { path = "crates/api" }
+stardust-state = { path = "crates/state" }
+stardust-ui = { path = "crates/ui" }
+stardust-views = { path = "crates/views" }
+stardust-router = { path = "crates/router" }

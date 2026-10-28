@@ -1,6 +1,23 @@
 [package]
 name = "stardust"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "小宇宙（Xiaoyuzhou FM）GPUI 桌面客户端"
+
+[[bin]]
+name = "stardust"
+path = "src/main.rs"
 
 [dependencies]
+anyhow.workspace = true
+gpui.workspace = true
+log.workspace = true
+env_logger.workspace = true
+libc.workspace = true
+signal-hook.workspace = true
+stardust-api.workspace = true
+stardust-state.workspace = true
+stardust-ui.workspace = true
+stardust-views.workspace = true
+stardust-router.workspace = true

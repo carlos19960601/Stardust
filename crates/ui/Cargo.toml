@@ -1,0 +1,8 @@
+[package]
+name = "stardust-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "可复用的 GPUI UI 组件与主题（对齐 sonora 的 `ui` crate）"
+
+[dependencies]
