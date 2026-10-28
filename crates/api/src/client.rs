@@ -786,8 +786,8 @@ impl ApiClient {
     }
 
     /// 精彩时间点。
-    pub fn episode_clap(&self, eid: &str) -> Result<Value, ApiError> {
-        let body = serde_json::json!({ "eid": eid, "duration": 0 });
+    pub fn episode_clap(&self, eid: &str, duration: i64) -> Result<Value, ApiError> {
+        let body = serde_json::json!({ "eid": eid, "duration": duration });
         let headers = self.ios_headers(Hdr {
             online_host: Some("X-Online-Host"),
             content_type: Some(("Content-type", "application/json")),
@@ -966,7 +966,8 @@ impl ApiClient {
     }
 
     /// 更新星标订阅。
-    pub fn subscription_star_update(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn subscription_star_update(&self, pid: &str, with_star: bool) -> Result<Value, ApiError> {
+        let body = serde_json::json!({ "pid": pid, "withStar": with_star });
         let headers = self.ios_headers(Hdr::default());
         self.exec(Method::Post, "/v1/subscription-star/update", &headers, Some(body))
     }
@@ -976,7 +977,25 @@ impl ApiClient {
     // -----------------------------------------------------------------------
 
     /// 查询单集的评论。
-    pub fn comment_primary(&self, body: Value) -> Result<CommentListResponse, ApiError> {
+    pub fn comment_primary(
+        &self,
+        owner_id: &str,
+        owner_type: &str,
+        order: &str,
+        load_more_key: Option<CommentPrimaryLoadMoreKey>,
+    ) -> Result<CommentListResponse, ApiError> {
+        let mut body = serde_json::json!({
+            "order": order,
+            "owner": { "id": owner_id, "type": owner_type },
+        });
+        if let Some(key) = load_more_key {
+            body["loadMoreKey"] = serde_json::json!({
+                "hotSortScore": key.hot_sort_score,
+                "id": key.id,
+                "direction": key.direction,
+                "section": key.section,
+            });
+        }
         let headers = self.minimal_headers();
         let value = self.exec(Method::Post, "/v1/comment/list-primary", &headers, Some(body))?;
         serde_json::from_value(value).map_err(|e| ApiError::Parse {
@@ -986,7 +1005,12 @@ impl ApiClient {
     }
 
     /// 查询回复评论。
-    pub fn comment_thread(&self, body: Value) -> Result<CommentListResponse, ApiError> {
+    pub fn comment_thread(
+        &self,
+        order: &str,
+        primary_comment_id: &str,
+    ) -> Result<CommentListResponse, ApiError> {
+        let body = serde_json::json!({ "order": order, "primaryCommentId": primary_comment_id });
         let headers = self.ios_headers(Hdr {
             online_host: Some("X-Online-Host"),
             device_id: DeviceIdKind::Generated,
@@ -1000,7 +1024,8 @@ impl ApiClient {
     }
 
     /// 收藏评论。
-    pub fn comment_collect_create(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn comment_collect_create(&self, comment_id: &str) -> Result<Value, ApiError> {
+        let body = serde_json::json!({ "commentId": comment_id });
         let headers = self.ios_headers(Hdr {
             online_host: Some("X-Online-Host"),
             ..Hdr::default()
@@ -1009,7 +1034,8 @@ impl ApiClient {
     }
 
     /// 取消收藏评论。
-    pub fn comment_collect_remove(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn comment_collect_remove(&self, comment_id: &str) -> Result<Value, ApiError> {
+        let body = serde_json::json!({ "commentId": comment_id });
         let headers = self.ios_headers(Hdr {
             online_host: Some("X-Online-Host"),
             ..Hdr::default()
@@ -1018,7 +1044,13 @@ impl ApiClient {
     }
 
     /// 获取收藏评论列表。
-    pub fn comment_collect_list(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn comment_collect_list(&self, load_more_key: Option<&str>) -> Result<Value, ApiError> {
+        let mut body = serde_json::json!({});
+        if let Some(key) = load_more_key {
+            if !key.is_empty() {
+                body["loadMoreKey"] = serde_json::Value::String(key.to_string());
+            }
+        }
         let headers = self.ios_headers(Hdr {
             abtest: None,
             ..Hdr::default()
@@ -1026,8 +1058,17 @@ impl ApiClient {
         self.exec(Method::Post, "/v1/comment/collect/list", &headers, Some(body))
     }
 
-    /// 点赞/取消点赞评论。
-    pub fn comment_like_update(&self, body: Value) -> Result<Value, ApiError> {
+    /// 点赞/取消点赞评论（`target_type` 仅支持 `COMMENT` 或 `PICK`）。
+    pub fn comment_like_update(
+        &self,
+        liked: bool,
+        target_id: &str,
+        target_type: &str,
+    ) -> Result<Value, ApiError> {
+        let body = serde_json::json!({
+            "liked": liked,
+            "target": { "id": target_id, "type": target_type },
+        });
         let headers = self.ios_headers(Hdr {
             online_host: Some("X-Online-Host"),
             ..Hdr::default()
@@ -1035,8 +1076,23 @@ impl ApiClient {
         self.exec(Method::Post, "/v1/like/update", &headers, Some(body))
     }
 
-    /// 创建评论。
-    pub fn comment_create(&self, body: Value) -> Result<Value, ApiError> {
+    /// 创建评论；传入 `reply_to_comment_id` 时为回复他人评论，否则给单集添加评论。
+    pub fn comment_create(
+        &self,
+        text: &str,
+        owner_id: &str,
+        owner_type: &str,
+        reply_to_comment_id: Option<&str>,
+    ) -> Result<Value, ApiError> {
+        let mut body = serde_json::json!({
+            "text": text,
+            "owner": { "id": owner_id, "type": owner_type },
+        });
+        if let Some(rid) = reply_to_comment_id {
+            if !rid.is_empty() {
+                body["replyToCommentId"] = serde_json::Value::String(rid.to_string());
+            }
+        }
         let headers = self.ios_headers(Hdr {
             abtest: Some("{}"),
             lang: Some(Lang::CnHk),
@@ -1047,7 +1103,8 @@ impl ApiClient {
     }
 
     /// 删除评论。
-    pub fn comment_remove(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn comment_remove(&self, comment_id: &str) -> Result<Value, ApiError> {
+        let body = serde_json::json!({ "commentId": comment_id });
         let headers = self.ios_headers(Hdr {
             abtest: Some("{}"),
             lang: Some(Lang::CnHk),
@@ -1095,7 +1152,13 @@ impl ApiClient {
     }
 
     /// 编辑精选-往日精选历史。
-    pub fn editor_pick_list_history(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn editor_pick_list_history(&self, load_more_key: Option<&str>) -> Result<Value, ApiError> {
+        let mut body = serde_json::json!({});
+        if let Some(key) = load_more_key {
+            if !key.is_empty() {
+                body["loadMoreKey"] = serde_json::Value::String(key.to_string());
+            }
+        }
         let headers = self.ios_headers(Hdr {
             abtest: Some("{}"),
             lang: Some(Lang::TwCn),
@@ -1106,23 +1169,28 @@ impl ApiClient {
     }
 
     /// 新节目广场。
-    pub fn pilot_discovery_list(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn pilot_discovery_list(&self) -> Result<Value, ApiError> {
         let headers = self.ios_headers(Hdr {
             abtest: Some("{}"),
             lang: Some(Lang::TwCn),
             ..Hdr::default()
         });
-        self.exec(Method::Post, "/v1/pilot-discovery/list", &headers, Some(body))
+        self.exec(
+            Method::Post,
+            "/v1/pilot-discovery/list",
+            &headers,
+            Some(serde_json::json!({})),
+        )
     }
 
     /// 首页「大家都在听」刷新推荐。
-    pub fn refresh_episode_recommend(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn refresh_episode_recommend(&self) -> Result<Value, ApiError> {
         let headers = self.ios_headers(Hdr::default());
         self.exec(
             Method::Post,
             "/v1/discovery-collection/refresh-episode-recommend",
             &headers,
-            Some(body),
+            Some(serde_json::json!({})),
         )
     }
 
@@ -1190,10 +1258,10 @@ impl ApiClient {
     // -----------------------------------------------------------------------
 
     /// 更新收藏单集。
-    pub fn favorite_episode_update(&self, eid: &str) -> Result<Value, ApiError> {
+    pub fn favorite_episode_update(&self, eid: &str, favorited: bool) -> Result<Value, ApiError> {
         let body = serde_json::json!({
             "eid": eid,
-            "favorited": true,
+            "favorited": favorited,
             "sourcePageName": 8,
             "currentPageName": 9,
         });
@@ -1205,7 +1273,7 @@ impl ApiClient {
     }
 
     /// 获取收藏单集列表。
-    pub fn favorite_episode_list(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn favorite_episode_list(&self) -> Result<Value, ApiError> {
         let headers = self.ios_headers(Hdr {
             abtest: Some("{}"),
             lang: Some(Lang::CnTw),
@@ -1213,11 +1281,22 @@ impl ApiClient {
             device_properties: true,
             ..Hdr::default()
         });
-        self.exec(Method::Post, "/v1/favorite/list", &headers, Some(body))
+        self.exec(
+            Method::Post,
+            "/v1/favorite/list",
+            &headers,
+            Some(serde_json::json!({})),
+        )
     }
 
     /// 收听历史。
-    pub fn episode_played_history_list(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn episode_played_history_list(&self, load_more_key: Option<&str>) -> Result<Value, ApiError> {
+        let mut body = serde_json::json!({});
+        if let Some(key) = load_more_key {
+            if !key.is_empty() {
+                body["loadMoreKey"] = serde_json::Value::String(key.to_string());
+            }
+        }
         let headers = self.ios_headers(Hdr {
             abtest: None,
             ..Hdr::default()
@@ -1226,7 +1305,8 @@ impl ApiClient {
     }
 
     /// 更新收听历史。
-    pub fn episode_played_history_list_update(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn episode_played_history_list_update(&self, eid: &str) -> Result<Value, ApiError> {
+        let body = serde_json::json!({ "eid": eid });
         let headers = self.ios_headers(Hdr {
             abtest: Some("{}"),
             lang: Some(Lang::CnTw),
@@ -1237,7 +1317,11 @@ impl ApiClient {
     }
 
     /// 订阅更新列表。
-    pub fn inbox_list(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn inbox_list(&self, load_more_key: Option<InboxLoadMoreKey>) -> Result<Value, ApiError> {
+        let mut body = serde_json::json!({ "limit": "20" });
+        if let Some(key) = load_more_key {
+            body["loadMoreKey"] = serde_json::json!({ "pubDate": key.pub_date, "id": key.id });
+        }
         let headers = self.ios_headers(Hdr {
             abtest: None,
             lang: Some(Lang::CnTw),
@@ -1280,7 +1364,8 @@ impl ApiClient {
     }
 
     /// 关注/取关用户。
-    pub fn relation_update(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn relation_update(&self, uid: &str, relation: &str) -> Result<Value, ApiError> {
+        let body = serde_json::json!({ "uid": uid, "relation": relation });
         let headers = self.ios_headers(Hdr {
             abtest: Some("{}"),
             ..Hdr::default()
@@ -1289,13 +1374,16 @@ impl ApiClient {
     }
 
     /// 获取用户偏好设置。
-    pub fn user_preference_get(&self, _body: Value) -> Result<Value, ApiError> {
+    pub fn user_preference_get(&self) -> Result<Value, ApiError> {
         let headers = self.ios_headers(Hdr::get());
         self.exec(Method::Get, "/v1/user-preference/get", &headers, None)
     }
 
-    /// 更新用户偏好设置。
-    pub fn user_preference_update(&self, body: Value) -> Result<Value, ApiError> {
+    /// 更新用户偏好设置（动态 key，值必须为 bool）。
+    pub fn user_preference_update(&self, key: &str, flag: bool) -> Result<Value, ApiError> {
+        let mut map = serde_json::Map::new();
+        map.insert(key.to_string(), serde_json::Value::Bool(flag));
+        let body = serde_json::Value::Object(map);
         // Go 侧该接口为 POST 但不带 Content-Type。
         let headers = self.ios_headers(Hdr {
             content_type: None,
@@ -1305,19 +1393,14 @@ impl ApiClient {
     }
 
     /// 获取付费单集音频链接。
-    pub fn private_media_get(&self, body: Value) -> Result<Value, ApiError> {
-        let eid = body
-            .get("eid")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .unwrap_or_default();
+    pub fn private_media_get(&self, eid: &str) -> Result<Value, ApiError> {
         let headers = self.ios_headers(Hdr {
             abtest: None,
             lang: None,
             permissions: "100000",
             ..Hdr::get()
         });
-        let path = format!("/v1/private-media/get?dubbing=false&eid={}", urlencode(&eid));
+        let path = format!("/v1/private-media/get?dubbing=false&eid={}", urlencode(eid));
         self.exec(Method::Get, &path, &headers, None)
     }
 
@@ -1406,7 +1489,8 @@ impl ApiClient {
     }
 
     /// 更新收听数据概览。
-    pub fn mileage_update(&self, body: Value) -> Result<Value, ApiError> {
+    pub fn mileage_update(&self, tracking: &[MileageTracking]) -> Result<Value, ApiError> {
+        let body = serde_json::json!({ "tracking": tracking });
         let headers = self.ios_headers(Hdr {
             abtest: Some("{}"),
             lang: Some(Lang::CnTw),

@@ -473,6 +473,38 @@ pub struct SubscriptionUpdateRequest {
     pub status: String,
 }
 
+/// 一级评论的分页游标（对齐 Go `commentPrimaryLoadMoreKey`）。
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentPrimaryLoadMoreKey {
+    pub id: String,
+    pub direction: String,
+    pub hot_sort_score: f64,
+    pub section: String,
+}
+
+/// 订阅更新列表的分页游标（对齐 Go `InboxListLoadMoreKey`）。
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxLoadMoreKey {
+    pub pub_date: String,
+    pub id: String,
+}
+
+/// 里程（收听数据）追踪条目（对齐 Go `UpdateMileageRequestBody.Tracking`）。
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MileageTracking {
+    pub eid: String,
+    pub pid: String,
+    pub start_playing_timestamp: f64,
+    pub end_playing_timestamp: f64,
+    pub is_speaker: bool,
+    pub is_offline: bool,
+    pub is_trial: bool,
+    pub with_speed: f32,
+}
+
 // ---------------------------------------------------------------------------
 // 响应结构（部分接口存在内层 `data` 包裹 + 兄弟字段，如 loadMoreKey）
 // ---------------------------------------------------------------------------

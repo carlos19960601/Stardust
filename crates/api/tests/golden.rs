@@ -9,7 +9,8 @@ use std::net::{TcpListener, TcpStream};
 
 use serde_json::Value;
 use stardust_api::{
-    ApiClient, EpisodeListRequest, LiveStatsReportRequest, LoginRequest, PlaybackProgressItem,
+    ApiClient, CommentPrimaryLoadMoreKey, EpisodeListRequest, InboxLoadMoreKey,
+    LiveStatsReportRequest, LoginRequest, MileageTracking, PlaybackProgressItem,
     RefreshTokenRequest, SearchRequest, SendCodeRequest, SubscriptionRequest,
     SubscriptionUpdateRequest,
 };
@@ -517,10 +518,10 @@ fn g_精彩时间点() {
         "/v1/clap/list",
         &[("abtest-info", AB_ENABLE), ("Accept-Language", LANG_HKCN), ("X-Online-Host", "api.xiaoyuzhoufm.com")],
         &[],
-        Some(r#"{"eid":"e1","duration":0}"#),
+        Some(r#"{"eid":"e1","duration":7284}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.episode_clap("e1");
+            let _ = c.episode_clap("e1", 7284);
         },
     );
 }
@@ -720,10 +721,10 @@ fn g_更新星标() {
         "/v1/subscription-star/update",
         &[("abtest-info", AB_ENABLE), ("Accept-Language", LANG_HKCN), ("Content-Type", CT)],
         &[],
-        Some(r#"{"pid":"p1","starred":true}"#),
+        Some(r#"{"pid":"p1","withStar":true}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.subscription_star_update(serde_json::json!({ "pid": "p1", "starred": true }));
+            let _ = c.subscription_star_update("p1", true);
         },
     );
 }
@@ -739,10 +740,35 @@ fn g_一级评论() {
         "/v1/comment/list-primary",
         &[("Content-Type", CT)],
         &["abtest-info", "Accept-Language"],
-        Some(r#"{"eid":"e1","limit":"20"}"#),
+        Some(r#"{"order":"HOT","owner":{"id":"e1","type":"EPISODE"}}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.comment_primary(serde_json::json!({ "eid": "e1", "limit": "20" }));
+            let _ = c.comment_primary("e1", "EPISODE", "HOT", None);
+        },
+    );
+}
+
+#[test]
+fn g_一级评论_带游标() {
+    check(
+        "POST",
+        "/v1/comment/list-primary",
+        &[("Content-Type", CT)],
+        &["abtest-info", "Accept-Language"],
+        Some(r#"{"order":"HOT","owner":{"id":"e1","type":"EPISODE"},"loadMoreKey":{"hotSortScore":1.5,"id":"lm1","direction":"NEXT","section":"1"}}"#),
+        |base| {
+            let c = ApiClient::with_bases(base.clone(), base);
+            let _ = c.comment_primary(
+                "e1",
+                "EPISODE",
+                "HOT",
+                Some(CommentPrimaryLoadMoreKey {
+                    id: "lm1".into(),
+                    direction: "NEXT".into(),
+                    hot_sort_score: 1.5,
+                    section: "1".into(),
+                }),
+            );
         },
     );
 }
@@ -754,10 +780,10 @@ fn g_回复评论() {
         "/v1/comment/list-thread",
         &[("abtest-info", AB_ENABLE), ("Accept-Language", LANG_HKCN), ("X-Online-Host", "api.xiaoyuzhoufm.com"), ("Content-Type", CT)],
         &[],
-        Some(r#"{"eid":"e1","commentId":"c1"}"#),
+        Some(r#"{"order":"HOT","primaryCommentId":"c1"}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.comment_thread(serde_json::json!({ "eid": "e1", "commentId": "c1" }));
+            let _ = c.comment_thread("HOT", "c1");
         },
     );
 }
@@ -769,10 +795,10 @@ fn g_收藏评论() {
         "/v1/comment/collect/create",
         &[("abtest-info", AB_ENABLE), ("Accept-Language", LANG_HKCN), ("X-Online-Host", "api.xiaoyuzhoufm.com"), ("Content-Type", CT)],
         &[],
-        Some(r#"{"eid":"e1","commentId":"c1"}"#),
+        Some(r#"{"commentId":"c1"}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.comment_collect_create(serde_json::json!({ "eid": "e1", "commentId": "c1" }));
+            let _ = c.comment_collect_create("c1");
         },
     );
 }
@@ -784,10 +810,10 @@ fn g_取消收藏评论() {
         "/v1/comment/collect/remove",
         &[("abtest-info", AB_ENABLE), ("Accept-Language", LANG_HKCN), ("X-Online-Host", "api.xiaoyuzhoufm.com"), ("Content-Type", CT)],
         &[],
-        Some(r#"{"eid":"e1","commentId":"c1"}"#),
+        Some(r#"{"commentId":"c1"}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.comment_collect_remove(serde_json::json!({ "eid": "e1", "commentId": "c1" }));
+            let _ = c.comment_collect_remove("c1");
         },
     );
 }
@@ -802,7 +828,7 @@ fn g_收藏评论列表() {
         Some(r#"{}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.comment_collect_list(serde_json::json!({}));
+            let _ = c.comment_collect_list(None);
         },
     );
 }
@@ -814,10 +840,10 @@ fn g_点赞评论() {
         "/v1/like/update",
         &[("abtest-info", AB_ENABLE), ("Accept-Language", LANG_HKCN), ("X-Online-Host", "api.xiaoyuzhoufm.com"), ("Content-Type", CT)],
         &[],
-        Some(r#"{"eid":"e1","commentId":"c1","liked":true}"#),
+        Some(r#"{"liked":true,"target":{"id":"c1","type":"COMMENT"}}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.comment_like_update(serde_json::json!({ "eid": "e1", "commentId": "c1", "liked": true }));
+            let _ = c.comment_like_update(true, "c1", "COMMENT");
         },
     );
 }
@@ -829,10 +855,25 @@ fn g_创建评论() {
         "/v1/comment/create",
         &[("abtest-info", "{}"), ("Accept-Language", LANG_CNHK), ("X-Online_Host", "api.xiaoyuzhoufm.com"), ("Content-Type", CT)],
         &[],
-        Some(r#"{"eid":"e1","content":"hi"}"#),
+        Some(r#"{"text":"hi","owner":{"id":"e1","type":"EPISODE"}}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.comment_create(serde_json::json!({ "eid": "e1", "content": "hi" }));
+            let _ = c.comment_create("hi", "e1", "EPISODE", None);
+        },
+    );
+}
+
+#[test]
+fn g_创建评论_回复() {
+    check(
+        "POST",
+        "/v1/comment/create",
+        &[("abtest-info", "{}"), ("Accept-Language", LANG_CNHK), ("X-Online_Host", "api.xiaoyuzhoufm.com"), ("Content-Type", CT)],
+        &[],
+        Some(r#"{"text":"hi","owner":{"id":"e1","type":"EPISODE"},"replyToCommentId":"c1"}"#),
+        |base| {
+            let c = ApiClient::with_bases(base.clone(), base);
+            let _ = c.comment_create("hi", "e1", "EPISODE", Some("c1"));
         },
     );
 }
@@ -844,10 +885,10 @@ fn g_删除评论() {
         "/v1/comment/remove",
         &[("abtest-info", "{}"), ("Accept-Language", LANG_CNHK), ("X-Online-Host", "api.xiaoyuzhoufm.com"), ("Content-Type", CT)],
         &[],
-        Some(r#"{"eid":"e1","commentId":"c1"}"#),
+        Some(r#"{"commentId":"c1"}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.comment_remove(serde_json::json!({ "eid": "e1", "commentId": "c1" }));
+            let _ = c.comment_remove("c1");
         },
     );
 }
@@ -896,7 +937,7 @@ fn g_编辑精选历史() {
         Some(r#"{}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.editor_pick_list_history(serde_json::json!({}));
+            let _ = c.editor_pick_list_history(None);
         },
     );
 }
@@ -911,7 +952,7 @@ fn g_新节目广场() {
         Some(r#"{}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.pilot_discovery_list(serde_json::json!({}));
+            let _ = c.pilot_discovery_list();
         },
     );
 }
@@ -926,7 +967,7 @@ fn g_刷新推荐() {
         Some(r#"{}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.refresh_episode_recommend(serde_json::json!({}));
+            let _ = c.refresh_episode_recommend();
         },
     );
 }
@@ -1024,7 +1065,22 @@ fn g_收藏单集() {
         Some(r#"{"eid":"e1","favorited":true,"sourcePageName":8,"currentPageName":9}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.favorite_episode_update("e1");
+            let _ = c.favorite_episode_update("e1", true);
+        },
+    );
+}
+
+#[test]
+fn g_取消收藏单集() {
+    check(
+        "POST",
+        "/v1/favorite/update",
+        &[("Accept-Language", LANG_HKCN), ("Content-Type", CT)],
+        &["abtest-info"],
+        Some(r#"{"eid":"e1","favorited":false,"sourcePageName":8,"currentPageName":9}"#),
+        |base| {
+            let c = ApiClient::with_bases(base.clone(), base);
+            let _ = c.favorite_episode_update("e1", false);
         },
     );
 }
@@ -1039,7 +1095,7 @@ fn g_收藏列表() {
         Some(r#"{}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.favorite_episode_list(serde_json::json!({}));
+            let _ = c.favorite_episode_list();
         },
     );
 }
@@ -1054,7 +1110,7 @@ fn g_收听历史列表() {
         Some(r#"{}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.episode_played_history_list(serde_json::json!({}));
+            let _ = c.episode_played_history_list(None);
         },
     );
 }
@@ -1069,7 +1125,7 @@ fn g_更新收听历史() {
         Some(r#"{"eid":"e1"}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.episode_played_history_list_update(serde_json::json!({ "eid": "e1" }));
+            let _ = c.episode_played_history_list_update("e1");
         },
     );
 }
@@ -1084,7 +1140,25 @@ fn g_订阅更新列表() {
         Some(r#"{"limit":"20"}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.inbox_list(serde_json::json!({ "limit": "20" }));
+            let _ = c.inbox_list(None);
+        },
+    );
+}
+
+#[test]
+fn g_订阅更新列表_带游标() {
+    check(
+        "POST",
+        "/v1/inbox/list",
+        &[("Accept-Language", LANG_CNTW), ("Content-Type", CT)],
+        &["abtest-info"],
+        Some(r#"{"limit":"20","loadMoreKey":{"pubDate":"2024-01-01","id":"lm1"}}"#),
+        |base| {
+            let c = ApiClient::with_bases(base.clone(), base);
+            let _ = c.inbox_list(Some(InboxLoadMoreKey {
+                pub_date: "2024-01-01".into(),
+                id: "lm1".into(),
+            }));
         },
     );
 }
@@ -1144,7 +1218,7 @@ fn g_关注用户() {
         Some(r#"{"uid":"u1","relation":"FOLLOW"}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.relation_update(serde_json::json!({ "uid": "u1", "relation": "FOLLOW" }));
+            let _ = c.relation_update("u1", "FOLLOW");
         },
     );
 }
@@ -1159,7 +1233,7 @@ fn g_偏好设置() {
         None,
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.user_preference_get(serde_json::json!({}));
+            let _ = c.user_preference_get();
         },
     );
 }
@@ -1171,10 +1245,10 @@ fn g_更新偏好() {
         "/v1/user-preference/update",
         &[("abtest-info", AB_ENABLE), ("Accept-Language", LANG_HKCN)],
         &["Content-Type"],
-        Some(r#"{"playbackRate":1.5}"#),
+        Some(r#"{"playbackRate":true}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.user_preference_update(serde_json::json!({ "playbackRate": 1.5 }));
+            let _ = c.user_preference_update("playbackRate", true);
         },
     );
 }
@@ -1189,7 +1263,7 @@ fn g_付费单集音频() {
         None,
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.private_media_get(serde_json::json!({ "eid": "e1" }));
+            let _ = c.private_media_get("e1");
         },
     );
 }
@@ -1287,13 +1361,16 @@ fn g_更新收听数据() {
         Some(r#"{"tracking":[{"eid":"e1","pid":"p1","startPlayingTimestamp":1.0,"endPlayingTimestamp":2.0,"isSpeaker":false,"isOffline":false,"isTrial":false,"withSpeed":1.0}]}"#),
         |base| {
             let c = ApiClient::with_bases(base.clone(), base);
-            let _ = c.mileage_update(serde_json::json!({
-                "tracking": [{
-                    "eid": "e1", "pid": "p1", "startPlayingTimestamp": 1.0,
-                    "endPlayingTimestamp": 2.0, "isSpeaker": false,
-                    "isOffline": false, "isTrial": false, "withSpeed": 1.0
-                }]
-            }));
+            let _ = c.mileage_update(&[MileageTracking {
+                eid: "e1".into(),
+                pid: "p1".into(),
+                start_playing_timestamp: 1.0,
+                end_playing_timestamp: 2.0,
+                is_speaker: false,
+                is_offline: false,
+                is_trial: false,
+                with_speed: 1.0,
+            }]);
         },
     );
 }
