@@ -1,12 +1,12 @@
-//! 在线冒烟测试：针对真实运行中的 xyz 服务验证客户端。
+//! 在线冒烟测试：针对真实的小宇宙上游 API 验证客户端（需要真实账号/令牌）。
 //!
-//! 默认 `#[ignore]`，需先在本机拉起内嵌服务（`localhost:23020`）后手动运行：
+//! 默认 `#[ignore]`，需手动设置令牌后运行：
 //!
 //! ```bash
 //! cargo test -p stardust-api --test live_smoke -- --ignored --nocapture
 //! ```
 
-use stardust_api::{ApiClient, ApiError, Method};
+use stardust_api::{ApiClient, ApiError, Method, DEFAULT_BASE_URL};
 
 /// `/ping` 无需鉴权，可验证 HTTP 层与信封解析。
 ///
@@ -15,7 +15,7 @@ use stardust_api::{ApiClient, ApiError, Method};
 #[test]
 #[ignore]
 fn ping_连通并解析信封() {
-    let client = ApiClient::local();
+    let client = ApiClient::new(DEFAULT_BASE_URL);
     let data = client
         .raw(Method::Get, "ping", None)
         .expect("调用 /ping 失败");
@@ -27,7 +27,7 @@ fn ping_连通并解析信封() {
 #[test]
 #[ignore]
 fn 无token访问受保护接口返回业务错误() {
-    let client = ApiClient::local();
+    let client = ApiClient::new(DEFAULT_BASE_URL);
     let err = client
         .search_preset()
         .expect_err("缺少 token 时应报错");
@@ -45,7 +45,7 @@ fn 无token访问受保护接口返回业务错误() {
 #[test]
 #[ignore]
 fn 刷新token缺参返回业务错误() {
-    let client = ApiClient::local();
+    let client = ApiClient::new(DEFAULT_BASE_URL);
     let err = client
         .post_raw("refresh_token", serde_json::json!({}))
         .expect_err("缺参时应报错");

@@ -6,3 +6,8 @@ license.workspace = true
 description = "应用全局状态（会话、播放、订阅、偏好等）"
 
 [dependencies]
+anyhow.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+stardust-api.workspace = true

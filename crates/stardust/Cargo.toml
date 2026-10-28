@@ -10,12 +10,9 @@ name = "stardust"
 path = "src/main.rs"
 
 [dependencies]
-anyhow.workspace = true
 gpui.workspace = true
 log.workspace = true
 env_logger.workspace = true
-libc.workspace = true
-signal-hook.workspace = true
 stardust-api.workspace = true
 stardust-state.workspace = true
 stardust-ui.workspace = true
