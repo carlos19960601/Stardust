@@ -16,6 +16,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "2", features = ["json"] }
 thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
 
 # 内部 crate（对齐 sonora 的多 crate 分层）
 stardust-api = { path = "crates/api" }

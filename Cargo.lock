@@ -5217,6 +5217,8 @@ dependencies = [
  "serde",
  "serde_json",
  "stardust-api",
+ "ureq",
+ "uuid",
 ]
 
 [[package]]
@@ -5227,6 +5229,7 @@ version = "0.1.0"
 name = "stardust-views"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "gpui",
  "log",
  "stardust-state",

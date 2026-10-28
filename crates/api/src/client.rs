@@ -39,6 +39,9 @@ pub struct ApiResponse {
     /// 注意：`/ping` 等个别处理器返回 `message` 而非 `msg`，一并兼容。
     #[serde(default, alias = "message")]
     pub msg: String,
+    /// 上游业务接口常在 `toast` 中返回面向用户的中文错误提示。
+    #[serde(default)]
+    pub toast: Option<String>,
     #[serde(default)]
     pub data: Option<Value>,
     #[serde(default)]
@@ -210,23 +213,24 @@ pub struct ApiClient {
 impl ApiClient {
     /// 创建指向指定上游地址的客户端（不带 token）。
     pub fn new(base_url: impl Into<String>) -> Self {
-        Self {
-            base_url: base_url.into(),
-            podcaster_base: PODCASTER_BASE.to_string(),
-            access_token: None,
-            device_id: uuid::Uuid::new_v4().to_string().to_uppercase(),
-            agent: ureq::AgentBuilder::new().timeout(DEFAULT_TIMEOUT).build(),
-        }
+        Self::with_bases(base_url, PODCASTER_BASE)
     }
 
     /// 同时指定上游业务地址与创作者后台地址（主要用于测试注入）。
     pub fn with_bases(base_url: impl Into<String>, podcaster_base: impl Into<String>) -> Self {
+        let base_url = base_url.into();
+        let podcaster_base = podcaster_base.into();
+        let is_loopback = is_loopback_url(&base_url) && is_loopback_url(&podcaster_base);
+        let agent = ureq::AgentBuilder::new()
+            .timeout(DEFAULT_TIMEOUT)
+            .try_proxy_from_env(!is_loopback)
+            .build();
         Self {
-            base_url: base_url.into(),
-            podcaster_base: podcaster_base.into(),
+            base_url,
+            podcaster_base,
             access_token: None,
             device_id: uuid::Uuid::new_v4().to_string().to_uppercase(),
-            agent: ureq::AgentBuilder::new().timeout(DEFAULT_TIMEOUT).build(),
+            agent,
         }
     }
 
@@ -572,11 +576,19 @@ impl ApiClient {
     // 鉴权
     // -----------------------------------------------------------------------
 
-    /// 发送短信验证码。
+    /// 发送短信验证码（需附带阿里云验证码 2.0 的 `captcha` 校验载荷）。
     pub fn send_code(&self, req: &SendCodeRequest) -> Result<Value, ApiError> {
+        let scene = {
+            let s = req.captcha.scene.trim();
+            if s.is_empty() { "web" } else { s }
+        };
         let body = serde_json::json!({
-            "mobilePhoneNumber": req.mobile_phone_number,
-            "areaCode": req.area_code.clone().unwrap_or_else(|| "+86".to_string()),
+            "mobilePhoneNumber": req.mobile_phone_number.trim(),
+            "areaCode": normalize_area_code(req.area_code.as_deref()),
+            "captcha": {
+                "scene": scene,
+                "verifyParam": req.captcha.verify_param,
+            },
         });
         let headers = self.podcaster_headers();
         let url = format!("{}/v1/auth/send-code", self.podcaster_base.trim_end_matches('/'));
@@ -588,9 +600,9 @@ impl ApiClient {
     /// 验证码登录，成功后返回用户信息与令牌（令牌取自上游响应头）。
     pub fn login(&self, req: &LoginRequest) -> Result<LoginResult, ApiError> {
         let body = serde_json::json!({
-            "areaCode": req.area_code.clone().unwrap_or_else(|| "+86".to_string()),
-            "verifyCode": req.verify_code,
-            "mobilePhoneNumber": req.mobile_phone_number,
+            "areaCode": normalize_area_code(req.area_code.as_deref()),
+            "verifyCode": req.verify_code.trim(),
+            "mobilePhoneNumber": req.mobile_phone_number.trim(),
         });
         let headers = self.podcaster_headers();
         let url = format!("{}/v1/auth/login-with-sms", self.podcaster_base.trim_end_matches('/'));
@@ -1561,8 +1573,31 @@ impl ApiClient {
     }
 }
 
-/// 从信封中取出可读的错误信息：优先 `msg`，其次 `error`。
+/// 判断 URL 是否指向本机回环地址（避免本地 mock 测试误走系统 HTTP 代理）。
+fn is_loopback_url(url: &str) -> bool {
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .unwrap_or(url);
+    rest.starts_with("127.0.0.1") || rest.starts_with("localhost") || rest.starts_with("[::1]")
+}
+
+/// 规范化国际电话区号：缺省或空白回落为 `"+86"`，缺少 `+` 前缀时自动补全（如 `"86"` -> `"+86"`）。
+pub fn normalize_area_code(area_code: Option<&str>) -> String {
+    match area_code.map(str::trim).filter(|s| !s.is_empty()) {
+        None => "+86".to_string(),
+        Some(s) if s.starts_with('+') => s.to_string(),
+        Some(s) => format!("+{s}"),
+    }
+}
+
+/// 从信封中取出可读的错误信息：优先采用面向用户的中文 `toast`（非泛化参数错误时），其次 `msg`，最后 `error`。
 fn envelope_msg(env: &ApiResponse) -> String {
+    if let Some(toast) = env.toast.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if toast != "参数错误" || env.msg.is_empty() {
+            return toast.to_string();
+        }
+    }
     if env.msg.is_empty() {
         env.error.clone().unwrap_or_default()
     } else {
@@ -1616,6 +1651,32 @@ mod tests {
         let env: ApiResponse =
             serde_json::from_str(r#"{"code":400,"msg":"","error":"bad"}"#).unwrap();
         assert_eq!(envelope_msg(&env), "bad");
+    }
+
+    #[test]
+    fn 错误信封_优先采用业务中文toast() {
+        let env: ApiResponse = serde_json::from_str(
+            r#"{"code":1013,"toast":"该手机号未注册小宇宙","message":"phone not registered"}"#,
+        )
+        .unwrap();
+        assert_eq!(envelope_msg(&env), "该手机号未注册小宇宙");
+
+        // 泛化的“参数错误”保留底层字段校验详情
+        let param_env: ApiResponse = serde_json::from_str(
+            r#"{"code":1,"toast":"参数错误","message":"body/captcha Invalid input"}"#,
+        )
+        .unwrap();
+        assert_eq!(envelope_msg(&param_env), "body/captcha Invalid input");
+    }
+
+    #[test]
+    fn 区号规范化_自动补全加号与默认值() {
+        assert_eq!(normalize_area_code(None), "+86");
+        assert_eq!(normalize_area_code(Some("")), "+86");
+        assert_eq!(normalize_area_code(Some("  ")), "+86");
+        assert_eq!(normalize_area_code(Some("86")), "+86");
+        assert_eq!(normalize_area_code(Some("+86")), "+86");
+        assert_eq!(normalize_area_code(Some("852")), "+852");
     }
 
     #[test]

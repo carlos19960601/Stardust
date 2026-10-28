@@ -28,6 +28,7 @@ mod client;
 mod models;
 
 pub use client::{
-    unwrap_inner, ApiClient, ApiError, ApiResponse, AuthTokens, Method, DEFAULT_BASE_URL,
+    normalize_area_code, unwrap_inner, ApiClient, ApiError, ApiResponse, AuthTokens, Method,
+    DEFAULT_BASE_URL,
 };
 pub use models::*;

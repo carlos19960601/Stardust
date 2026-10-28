@@ -11,12 +11,23 @@
 //! - 会话持久化到磁盘后，应用重启时 [`AuthManager::new`] 会自动恢复；
 //! - token 通过后台线程周期刷新，实现「token 失效时自动刷新」。
 
+mod captcha;
+
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use stardust_api::{ApiClient, DEFAULT_BASE_URL, LoginRequest, RefreshTokenRequest, SendCodeRequest, User};
+use stardust_api::{
+    ApiClient, ApiError, CaptchaPayload, DEFAULT_BASE_URL, LoginRequest, RefreshTokenRequest,
+    SendCodeRequest, User,
+};
+
+pub use captcha::{
+    CAPTCHA_RETRY_CODE, DEFAULT_CAPTCHA_TIMEOUT, mask_phone, open_system_browser,
+    run_captcha_send_flow,
+};
 
 /// 登录会话：access/refresh token 与当前用户信息。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -123,14 +134,32 @@ impl AuthManager {
         self.session.as_ref().and_then(|s| s.user.as_ref())
     }
 
-    /// 发送短信验证码。
-    pub fn send_code(&self, phone: &str, area_code: &str) -> anyhow::Result<()> {
+    /// 携带已完成的阿里云验证码参数发送短信验证码。
+    pub fn send_code_with_captcha(
+        &self,
+        phone: &str,
+        area_code: &str,
+        verify_param: &str,
+    ) -> Result<(), ApiError> {
         let req = SendCodeRequest {
-            mobile_phone_number: phone.to_string(),
+            mobile_phone_number: phone.trim().to_string(),
             area_code: non_empty(area_code),
+            captcha: CaptchaPayload::web(verify_param),
         };
         self.client.send_code(&req)?;
         Ok(())
+    }
+
+    /// 通过系统浏览器完成人机验证并发送短信验证码。
+    pub fn send_code(&self, phone: &str, area_code: &str) -> anyhow::Result<()> {
+        let cancel = AtomicBool::new(false);
+        run_captcha_send_flow(
+            phone,
+            &cancel,
+            DEFAULT_CAPTCHA_TIMEOUT,
+            open_system_browser,
+            |verify_param| self.send_code_with_captcha(phone, area_code, verify_param),
+        )
     }
 
     /// 验证码登录，成功后更新并持久化会话。
@@ -211,6 +240,25 @@ fn non_empty(s: &str) -> Option<String> {
     } else {
         Some(s.to_string())
     }
+}
+
+/// 在后台执行浏览器安全验证并发送短信验证码（等待人机验证期间不持有 `AuthManager` 互斥锁）。
+pub fn send_code_via_browser(
+    auth: Arc<Mutex<AuthManager>>,
+    phone: &str,
+    area_code: &str,
+    cancel: &AtomicBool,
+) -> anyhow::Result<()> {
+    run_captcha_send_flow(
+        phone,
+        cancel,
+        DEFAULT_CAPTCHA_TIMEOUT,
+        open_system_browser,
+        |verify_param| {
+            let guard = auth.lock().map_err(|_| ApiError::Network("认证管理器锁不可用".into()))?;
+            guard.send_code_with_captcha(phone, area_code, verify_param)
+        },
+    )
 }
 
 /// 启动后台 token 刷新线程：每 10 分钟刷新一次（对齐 horizon 前端的轮询间隔）。
@@ -454,6 +502,30 @@ mod tests {
         assert_eq!(mgr.session().unwrap().access_token, "AT-NEW");
         assert_eq!(mgr.session().unwrap().refresh_token, "RT-NEW");
         assert_eq!(mgr.client().access_token(), Some("AT-NEW"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 发送验证码_mock_携带captcha载荷() {
+        let dir = temp_dir("send-code-mock");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base = format!("http://{addr}");
+
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            drain_request(&mut stream);
+            write_response(&mut stream, r#"{"code":200,"msg":"OK","data":null}"#, &[]);
+        });
+
+        let mgr = AuthManager {
+            client: ApiClient::with_bases(base.clone(), base),
+            session: None,
+            config_dir: dir.clone(),
+        };
+        mgr.send_code_with_captcha("19961780601", "86", "vp-mock-token")
+            .unwrap();
+        handle.join().unwrap();
         std::fs::remove_dir_all(&dir).ok();
     }
 }

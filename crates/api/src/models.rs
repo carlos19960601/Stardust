@@ -352,6 +352,26 @@ pub struct SearchItem {
 // 请求结构
 // ---------------------------------------------------------------------------
 
+/// 发送短信验证码时附带的阿里云验证码 2.0 人机校验参数。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptchaPayload {
+    /// 验证场景：上游契约要求 `"web"` 或 `"h5"`。
+    pub scene: String,
+    /// 阿里云验证码前端 SDK 生成的加密签名串（`verifyParam`）。
+    pub verify_param: String,
+}
+
+impl CaptchaPayload {
+    /// 构造桌面/网页端（`scene = "web"`）验证码载荷。
+    pub fn web(verify_param: impl Into<String>) -> Self {
+        Self {
+            scene: "web".to_string(),
+            verify_param: verify_param.into(),
+        }
+    }
+}
+
 /// 发送短信验证码。
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -359,6 +379,7 @@ pub struct SendCodeRequest {
     pub mobile_phone_number: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub area_code: Option<String>,
+    pub captcha: CaptchaPayload,
 }
 
 /// 验证码登录。

@@ -9,7 +9,7 @@ use std::net::{TcpListener, TcpStream};
 
 use serde_json::Value;
 use stardust_api::{
-    ApiClient, CommentPrimaryLoadMoreKey, EpisodeListRequest, InboxLoadMoreKey,
+    ApiClient, CaptchaPayload, CommentPrimaryLoadMoreKey, EpisodeListRequest, InboxLoadMoreKey,
     LiveStatsReportRequest, LoginRequest, MileageTracking, PlaybackProgressItem,
     RefreshTokenRequest, SearchRequest, SendCodeRequest, SubscriptionRequest,
     SubscriptionUpdateRequest,
@@ -161,6 +161,7 @@ fn 发送验证码_golden() {
                 .send_code(&SendCodeRequest {
                     mobile_phone_number: "13800000000".into(),
                     area_code: Some("+86".into()),
+                    captcha: CaptchaPayload::web("verify-param-123"),
                 })
                 .unwrap();
         },
@@ -179,7 +180,10 @@ fn 发送验证码_golden() {
     assert_header(&captured.headers, "referer", "https://podcaster.xiaoyuzhoufm.com/");
     assert_header(&captured.headers, "user-agent", PODCASTER_UA);
     assert!(
-        json_eq(&captured.body, r#"{"areaCode":"+86","mobilePhoneNumber":"13800000000"}"#),
+        json_eq(
+            &captured.body,
+            r#"{"areaCode":"+86","mobilePhoneNumber":"13800000000","captcha":{"scene":"web","verifyParam":"verify-param-123"}}"#
+        ),
         "body 不一致：{}",
         captured.body
     );
@@ -196,13 +200,43 @@ fn 发送验证码_缺省区号默认86_golden() {
                 .send_code(&SendCodeRequest {
                     mobile_phone_number: "13800000000".into(),
                     area_code: None,
+                    captcha: CaptchaPayload::web("vp-default"),
                 })
                 .unwrap();
         },
     );
     assert!(
-        json_eq(&captured.body, r#"{"areaCode":"+86","mobilePhoneNumber":"13800000000"}"#),
+        json_eq(
+            &captured.body,
+            r#"{"areaCode":"+86","mobilePhoneNumber":"13800000000","captcha":{"scene":"web","verifyParam":"vp-default"}}"#
+        ),
         "缺省区号应回落到 +86：{}",
+        captured.body
+    );
+}
+
+#[test]
+fn 发送验证码_无加号区号自动补全_golden() {
+    let captured = mock_once(
+        r#"{"code":200,"msg":"OK","data":null}"#,
+        &[],
+        |base| {
+            let client = ApiClient::with_bases(base.clone(), base);
+            client
+                .send_code(&SendCodeRequest {
+                    mobile_phone_number: "13800000000".into(),
+                    area_code: Some("86".into()),
+                    captcha: CaptchaPayload::web("vp-norm"),
+                })
+                .unwrap();
+        },
+    );
+    assert!(
+        json_eq(
+            &captured.body,
+            r#"{"areaCode":"+86","mobilePhoneNumber":"13800000000","captcha":{"scene":"web","verifyParam":"vp-norm"}}"#
+        ),
+        "无 + 前缀的区号应自动补全为 +86：{}",
         captured.body
     );
 }
